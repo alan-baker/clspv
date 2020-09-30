@@ -3068,14 +3068,18 @@ spv::Op SPIRVProducerPass::GetSPIRVCmpOpcode(CmpInst *I) {
       {CmpInst::FCMP_OGE, spv::OpFOrdGreaterThanEqual},
       {CmpInst::FCMP_OLT, spv::OpFOrdLessThan},
       {CmpInst::FCMP_OLE, spv::OpFOrdLessThanEqual},
+      {CmpInst::FCMP_OEQ, spv::OpFOrdEqual},
       {CmpInst::FCMP_ONE, spv::OpFOrdNotEqual},
+      {CmpInst::FCMP_ORD, spv::OpOrdered},
       {CmpInst::FCMP_UEQ, spv::OpFUnordEqual},
       {CmpInst::FCMP_UGT, spv::OpFUnordGreaterThan},
       {CmpInst::FCMP_UGE, spv::OpFUnordGreaterThanEqual},
       {CmpInst::FCMP_ULT, spv::OpFUnordLessThan},
       {CmpInst::FCMP_ULE, spv::OpFUnordLessThanEqual},
-      {CmpInst::FCMP_UNE, spv::OpFUnordNotEqual}};
+      {CmpInst::FCMP_UNE, spv::OpFUnordNotEqual},
+      {CmpInst::FCMP_UNO, spv::OpUnordered}};
 
+  if (!Map.count(I->getPredicate())) llvm::errs() << "Unhandled predicate " << *I << "\n";
   assert(0 != Map.count(I->getPredicate()));
 
   return Map.at(I->getPredicate());

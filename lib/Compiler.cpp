@@ -23,6 +23,8 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/Linker/Linker.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/Support/Allocator.h"
@@ -163,6 +165,9 @@ static llvm::cl::opt<std::string> IROutputFile(
     llvm::cl::desc(
         "Emit LLVM IR to the given file after parsing and stop compilation."),
     llvm::cl::value_desc("filename"));
+
+static llvm::cl::opt<std::string>
+    LibCLC("libclc", llvm::cl::desc("LibCLC math library location"));
 
 // Populates |SamplerMapEntries| with data from the input sampler map. Returns 0
 // if successful.
@@ -609,6 +614,7 @@ int PopulatePassManager(
   if (clspv::Option::ClusterPodKernelArgs()) {
     pm->add(clspv::createClusterPodKernelArgumentsPass());
   }
+  pm->add(clspv::createReplaceLLVMIntrinsicsPass());
   pm->add(clspv::createReplaceOpenCLBuiltinPass());
 
   // Lower longer vectors when requested. Note that this pass depends on
@@ -928,6 +934,18 @@ int Compile(const int argc, const char *const argv[]) {
   // If --emit-ir was requested, emit the initial LLVM IR and stop compilation.
   if (!IROutputFile.empty()) {
     return GenerateIRFile(&pm, *module, IROutputFile);
+  }
+
+  if (!LibCLC.empty()) {
+    llvm::SMDiagnostic Err;
+    std::unique_ptr<llvm::Module> libclc = llvm::parseIRFile(LibCLC, Err, context);
+    if (!libclc) {
+      llvm::errs() << "Failed to parse libclc\n";
+      return -1;
+    }
+
+    llvm::Linker L(*module);
+    L.linkInModule(std::move(libclc), 0);
   }
 
   // Otherwise, populate the pass manager and run the regular passes.
