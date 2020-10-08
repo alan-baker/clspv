@@ -3752,7 +3752,8 @@ SPIRVID SPIRVProducerPass::GenerateInstructionFromCall(CallInst *Call) {
   default: {
     glsl::ExtInst EInst = getDirectOrIndirectExtInstEnum(func_info);
 
-    if (EInst) {
+    // Do not replace functions with implementations.
+    if (EInst && Call->getCalledFunction()->isDeclaration()) {
       SPIRVID ExtInstImportID = getOpExtInstImportID();
 
       //

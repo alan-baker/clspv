@@ -23,6 +23,7 @@
 
 #include "spirv/unified1/spirv.hpp"
 
+#include "Builtins.h"
 #include "Constants.h"
 #include "Passes.h"
 
@@ -40,6 +41,8 @@ struct ReplaceLLVMIntrinsicsPass final : public ModulePass {
   bool replaceMemset(Module &M);
   bool replaceMemcpy(Module &M);
   bool removeLifetimeDeclarations(Module &M);
+  bool replaceCtlz(Module &M);
+  bool replaceTrunc(Module &M);
 };
 } // namespace
 
@@ -62,6 +65,8 @@ bool ReplaceLLVMIntrinsicsPass::runOnModule(Module &M) {
   Changed |= replaceFshl(M);
   Changed |= replaceMemset(M);
   Changed |= replaceMemcpy(M);
+  Changed |= replaceCtlz(M);
+  Changed |= replaceTrunc(M);
 
   return Changed;
 }
@@ -441,6 +446,116 @@ bool ReplaceLLVMIntrinsicsPass::removeLifetimeDeclarations(Module &M) {
     for (auto U : users) {
       if (auto *CI = dyn_cast<CallInst>(U)) {
         CI->eraseFromParent();
+      }
+    }
+    F->eraseFromParent();
+  }
+
+  return Changed;
+}
+
+bool ReplaceLLVMIntrinsicsPass::replaceCtlz(Module &M) {
+  bool Changed = false;
+
+  SmallVector<Function *, 8> WorkList;
+  for (auto &F : M) {
+    if (F.getName().startswith("llvm.ctlz")) {
+      WorkList.push_back(&F);
+    }
+  }
+
+  for (auto *F : WorkList) {
+    SmallVector<User *, 8> users(F->users());
+    FunctionType *clz_ty = nullptr;
+    Value *clz = nullptr;
+    for (auto U : users) {
+      if (auto *call = dyn_cast<CallInst>(U)) {
+        if (!clz) {
+          clz_ty = FunctionType::get(F->getReturnType(), {F->getReturnType()}, false);
+          std::string name = clspv::Builtins::GetMangledFunctionName("clz", clz_ty);
+          clz = M.getOrInsertFunction(name, clz_ty).getCallee();
+          Changed = true;
+        }
+
+        Value *args[1] = {call->getArgOperand(0)};
+        auto *new_call = CallInst::Create(clz_ty, clz, args, "", call);
+        call->replaceAllUsesWith(new_call);
+        call->eraseFromParent();
+      }
+    }
+    F->eraseFromParent();
+  }
+
+  return Changed;
+}
+
+bool ReplaceLLVMIntrinsicsPass::replaceTrunc(Module &M) {
+  bool Changed = false;
+
+  // llvm.trunc is implemented as copysign(floor(fabs(x)), x).
+  SmallVector<Function *, 8> WorkList;
+  for (auto &F : M) {
+    if (F.getName().startswith("llvm.trunc")) {
+      WorkList.push_back(&F);
+    }
+  }
+
+  for (auto *F : WorkList) {
+    SmallVector<User *, 8> users(F->users());
+    FunctionCallee fabs;
+    FunctionCallee floor;
+    FunctionCallee copysign;
+    for (auto U : users) {
+      if (auto *call = dyn_cast<CallInst>(U)) {
+        if (!fabs.getCallee()) {
+          auto *unary_ty = FunctionType::get(F->getReturnType(),
+                                             {F->getReturnType()}, false);
+          auto *binary_ty = FunctionType::get(
+              F->getReturnType(), {F->getReturnType(), F->getReturnType()},
+              false);
+
+          // fabs
+          std::string name =
+              clspv::Builtins::GetMangledFunctionName("fabs", unary_ty);
+          auto *func = M.getFunction(name);
+          if (func) {
+            fabs = {unary_ty, func};
+          } else {
+            fabs = M.getOrInsertFunction(name, unary_ty);
+          }
+
+          // floor
+          name = clspv::Builtins::GetMangledFunctionName("floor", unary_ty);
+          func = M.getFunction(name);
+          if (func) {
+            floor = {unary_ty, func};
+          } else {
+            floor = M.getOrInsertFunction(name, unary_ty);
+          }
+
+          // copysign
+          name = clspv::Builtins::GetMangledFunctionName("copysign", binary_ty);
+          func = M.getFunction(name);
+          if (func) {
+            copysign = {binary_ty, func};
+          } else {
+            copysign = M.getOrInsertFunction("copysign", binary_ty);
+          }
+
+          Changed = true;
+        }
+
+        Value *Arg = call->getArgOperand(0);
+
+        Value *fabs_args[1] = {Arg};
+        auto *new_fabs = CallInst::Create(fabs, fabs_args, "", call);
+        Value *floor_args[1] = {new_fabs};
+        auto *new_floor = CallInst::Create(floor, floor_args, "", call);
+        Value *copysign_args[2] = {new_floor, Arg};
+        auto *new_copysign =
+            CallInst::Create(copysign, copysign_args, "", call);
+        call->replaceAllUsesWith(new_copysign);
+        call->eraseFromParent();
       }
     }
     F->eraseFromParent();
