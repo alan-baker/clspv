@@ -47,6 +47,22 @@ using namespace llvm;
 
 namespace {
 
+uint64_t ExponentMask(unsigned width) {
+  if (width == 16)
+    return 0x7c00ULL;
+  if (width == 64)
+    return 0x7ff0000000000000ULL;
+  return 0x7f800000ULL;
+}
+
+uint64_t AbsoluteMask(unsigned width) {
+  if (width == 16)
+    return 0x7fffffffULL;
+  if (width == 64)
+    return 0x7fffffffffffffffULL;
+  return 0x7fffULL;
+}
+
 uint32_t clz(uint32_t v) {
   uint32_t r;
   uint32_t shift;
@@ -282,6 +298,8 @@ private:
   bool replaceOrdered(Function &F, bool is_ordered);
   bool replaceIsNormal(Function &F);
   bool replaceFDim(Function &F);
+  bool replaceFrexp(Function &F);
+  bool replaceRemainder(Function &F);
 
   // Caches struct types for { |type|, |type| }. This prevents
   // getOrInsertFunction from introducing a bitcasts between structs with
@@ -381,6 +399,12 @@ bool ReplaceOpenCLBuiltinPass::runOnFunction(Function &F) {
 
   case Builtins::kFmod:
     return replaceFmod(F);
+
+  case Builtins::kFrexp:
+    return replaceFrexp(F);
+
+  case Builtins::kRemainder:
+    return replaceRemainder(F);
 
   case Builtins::kBarrier:
   case Builtins::kWorkGroupBarrier:
@@ -1062,19 +1086,7 @@ bool ReplaceOpenCLBuiltinPass::replaceIsFinite(Function &F) {
     // Create Mask
     auto ScalarSize = ValTy->getScalarSizeInBits();
     Value *InfMask = nullptr;
-    switch (ScalarSize) {
-    case 16:
-      InfMask = ConstantInt::get(IntTy, 0x7C00U);
-      break;
-    case 32:
-      InfMask = ConstantInt::get(IntTy, 0x7F800000U);
-      break;
-    case 64:
-      InfMask = ConstantInt::get(IntTy, 0x7FF0000000000000ULL);
-      break;
-    default:
-      llvm_unreachable("Unsupported floating-point type");
-    }
+    InfMask = ConstantInt::get(IntTy, ExponentMask(ScalarSize));
 
     IRBuilder<> Builder(CI);
 
@@ -3053,16 +3065,12 @@ bool ReplaceOpenCLBuiltinPass::replaceIsNormal(Function &F) {
     auto x = Call->getArgOperand(0);
     unsigned width = x->getType()->getScalarSizeInBits();
     Type *int_ty = IntegerType::get(Call->getContext(), width);
-    uint64_t abs_mask = 0x7fffffff;
-    uint64_t exp_mask = 0x7f800000;
+    uint64_t abs_mask = AbsoluteMask(width);
+    uint64_t exp_mask = ExponentMask(width);
     uint64_t min_mask = 0x00800000;
     if (width == 16) {
-      abs_mask = 0x7fff;
-      exp_mask = 0x7c00;
       min_mask = 0x0400;
     } else if (width == 64) {
-      abs_mask = 0x7fffffffffffffff;
-      exp_mask = 0x7ff0000000000000;
       min_mask = 0x0010000000000000;
     }
     Constant *abs_const = ConstantInt::get(int_ty, APInt(width, abs_mask));
@@ -3102,5 +3110,38 @@ bool ReplaceOpenCLBuiltinPass::replaceFDim(Function &F) {
     auto cmp = builder.CreateFCmpUGT(x, y);
     return builder.CreateSelect(cmp, sub,
                                 Constant::getNullValue(Call->getType()));
+  });
+}
+
+bool ReplaceOpenCLBuiltinPass::replaceFrexp(Function &F) {
+  // If the pointer argument is in the generic address space, strip address
+  // space casts on the argument and generate a call to an equivalent frexp
+  // instead.
+  unsigned addrspace =
+      F.getFunctionType()->getParamType(1)->getPointerAddressSpace();
+  if (addrspace != clspv::AddressSpace::Generic)
+    return false;
+
+  return replaceCallsWithValue(F, [&F](CallInst *Call) {
+    auto int_ptr = Call->getArgOperand(1);
+    while (auto as_cast = dyn_cast<AddrSpaceCastInst>(int_ptr)) {
+      int_ptr = as_cast->getPointerOperand();
+    }
+    auto func_ty = FunctionType::get(
+        Call->getType(),
+        {Call->getArgOperand(0)->getType(), int_ptr->getType()}, false);
+    std::string func_name = Builtins::GetMangledFunctionName("frexp", func_ty);
+    auto callee = F.getParent()->getOrInsertFunction(func_name, func_ty);
+    return CallInst::Create(callee, {Call->getArgOperand(0), int_ptr}, "",
+                            Call);
+  });
+}
+
+bool ReplaceOpenCLBuiltinPass::replaceRemainder(Function &F) {
+  return replaceCallsWithValue(F, [](CallInst *Call) {
+    llvm::errs() << *Call << "\n";
+    const auto x = Call->getArgOperand(0);
+    const auto y = Call->getArgOperand(1);
+    return BinaryOperator::Create(Instruction::FRem, x, y, "", Call);
   });
 }

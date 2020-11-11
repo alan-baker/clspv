@@ -785,11 +785,11 @@ The `convert_<type>_rte()`, `convert_<type>_rtz()`, `convert_<type>_rtp()`,
 
 #### Math Functions
 
-The `cbrt()`, `cospi()`, `erf()`, `erfc()`, `expm1()`, `fdim()`,
-`hypot()`, `ilogb()`, `lgamma()`, `lgamma_r()`, `logb()`, `maxmag()`,
-`minmag()`, `nan()`, `nextafter()`, `pown()`, `remainder()`, `remquo()`,
-`rint()`, `rootn()`, `sincos()`, `sinpi()`, `tanpi()`, and `tgamma()` built-in
-functions **must not** be used.
+The `cbrt()`, `cospi()`, `erf()`, `erfc()`, `expm1()`, `hypot()`, `ilogb()`,
+`lgamma()`, `lgamma_r()`, `logb()`, `maxmag()`, `minmag()`, `nan()`,
+`nextafter()`, `pown()`, `remainder()`, `remquo()`, `rint()`, `rootn()`,
+`sincos()`, `sinpi()`, `tanpi()`, and `tgamma()` built-in functions **must
+not** be used.
 
 #### Integer Functions
 
