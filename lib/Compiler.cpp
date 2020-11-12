@@ -1045,6 +1045,18 @@ int CompileFromSourceString(const std::string &program,
 
   std::unique_ptr<llvm::Module> module(action.takeModule());
 
+  if (!LibCLC.empty()) {
+    llvm::SMDiagnostic Err;
+    std::unique_ptr<llvm::Module> libclc = llvm::parseIRFile(LibCLC, Err, context);
+    if (!libclc) {
+      llvm::errs() << "Failed to parse libclc\n";
+      return -1;
+    }
+
+    llvm::Linker L(*module);
+    L.linkInModule(std::move(libclc), 0);
+  }
+
   // Optimize.
   // Create a memory buffer for temporarily writing the result.
   SmallVector<char, 10000> binary;

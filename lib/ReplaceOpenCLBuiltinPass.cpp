@@ -325,11 +325,6 @@ bool ReplaceOpenCLBuiltinPass::runOnModule(Module &M) {
 }
 
 bool ReplaceOpenCLBuiltinPass::runOnFunction(Function &F) {
-  // Do not replace functions with implementations.
-  if (!F.isDeclaration()) {
-    return false;
-  }
-
   auto &FI = Builtins::Lookup(&F);
   switch (FI.getType()) {
   case Builtins::kAbs:
