@@ -614,7 +614,6 @@ int PopulatePassManager(
   if (clspv::Option::ClusterPodKernelArgs()) {
     pm->add(clspv::createClusterPodKernelArgumentsPass());
   }
-  pm->add(clspv::createReplaceLLVMIntrinsicsPass());
   pm->add(clspv::createReplaceOpenCLBuiltinPass());
 
   // Lower longer vectors when requested. Note that this pass depends on
