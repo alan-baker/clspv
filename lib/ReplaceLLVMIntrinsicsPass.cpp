@@ -45,6 +45,7 @@ struct ReplaceLLVMIntrinsicsPass final : public ModulePass {
   bool removeLifetimeDeclarations(Module &M);
   bool replaceFshl(Function &F);
   bool replaceCountZeroes(Function &F, bool leading);
+  bool replaceCopysign(Function &F);
 
   bool replaceCallsWithValue(Function &F,
                              std::function<Value *(CallInst *)> Replacer);
@@ -87,6 +88,8 @@ bool ReplaceLLVMIntrinsicsPass::runOnFunction(Function &F) {
   switch (F.getIntrinsicID()) {
     case Intrinsic::fshl:
       return replaceFshl(F);
+    case Intrinsic::copysign:
+      return replaceCopysign(F);
     case Intrinsic::ctlz:
       return replaceCountZeroes(F, true);
     case Intrinsic::cttz:
@@ -544,3 +547,41 @@ bool ReplaceLLVMIntrinsicsPass::replaceCountZeroes(Function &F, bool leading) {
   });
 }
 
+bool ReplaceLLVMIntrinsicsPass::replaceCopysign(Function &F) {
+  return replaceCallsWithValue(F, [&F](CallInst *CI) {
+    auto XValue = CI->getOperand(0);
+    auto YValue = CI->getOperand(1);
+
+    auto Ty = XValue->getType();
+
+    Type *IntTy = Type::getIntNTy(F.getContext(), Ty->getScalarSizeInBits());
+    if (auto vec_ty = dyn_cast<VectorType>(Ty)) {
+      IntTy = FixedVectorType::get(
+          IntTy, vec_ty->getElementCount().getKnownMinValue());
+    }
+
+    // Return X with the sign of Y
+
+    // Sign bit masks
+    auto SignBit = IntTy->getScalarSizeInBits() - 1;
+    auto SignBitMask = 1 << SignBit;
+    auto SignBitMaskValue = ConstantInt::get(IntTy, SignBitMask);
+    auto NotSignBitMaskValue = ConstantInt::get(IntTy, ~SignBitMask);
+
+    IRBuilder<> Builder(CI);
+
+    // Extract sign of Y
+    auto YInt = Builder.CreateBitCast(YValue, IntTy);
+    auto YSign = Builder.CreateAnd(YInt, SignBitMaskValue);
+
+    // Clear sign bit in X
+    auto XInt = Builder.CreateBitCast(XValue, IntTy);
+    XInt = Builder.CreateAnd(XInt, NotSignBitMaskValue);
+
+    // Insert sign bit of Y into X
+    auto NewXInt = Builder.CreateOr(XInt, YSign);
+
+    // And cast back to floating-point
+    return Builder.CreateBitCast(NewXInt, Ty);
+  });
+}
