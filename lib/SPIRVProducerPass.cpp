@@ -5044,6 +5044,12 @@ SPIRVProducerPass::getExtInstEnum(const Builtins::FunctionInfo &func_info) {
   if (func_info.getName().find("llvm.cttz.") == 0) {
     return glsl::ExtInst::ExtInstFindILsb;
   }
+  if (func_info.getName().find("llvm.ceil.") == 0) {
+    return glsl::ExtInst::ExtInstCeil;
+  }
+  if (func_info.getName().find("llvm.rint.") == 0) {
+    return glsl::ExtInst::ExtInstRoundEven;
+  }
   return kGlslExtInstBad;
 }
 

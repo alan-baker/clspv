@@ -3019,3 +3019,4 @@ bool ReplaceOpenCLBuiltinPass::replaceFDim(Function &F) {
                                 Constant::getNullValue(Call->getType()));
   });
 }
+

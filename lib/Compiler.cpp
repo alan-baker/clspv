@@ -19,6 +19,7 @@
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/PreprocessorOptions.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -42,6 +43,7 @@
 #include "clspv/Sampler.h"
 #include "clspv/opencl_builtins_header.h"
 
+#include "Builtins.h"
 #include "FrontendPlugin.h"
 #include "Passes.h"
 
@@ -844,6 +846,42 @@ int GenerateIRFile(llvm::legacy::PassManager *pm, llvm::Module &module,
   return 0;
 }
 
+bool LinkLibCLC(llvm::Module *module) {
+  llvm::SMDiagnostic Err;
+  std::unique_ptr<llvm::Module> libclc =
+      llvm::parseIRFile(LibCLC, Err, module->getContext());
+  if (!libclc) {
+    llvm::errs() << "Failed to parse libclc\n";
+    return false;
+  }
+
+  // TODO: this leads to problems...
+  //for (auto &F : *libclc) {
+  //  if (F.isDeclaration())
+  //    continue;
+
+  //  // These functions all take a pointer argument, always link all versions to
+  //  // unpack generic versions.
+  //  auto func_info = clspv::Builtins::Lookup(&F);
+  //  switch (func_info.getType()) {
+  //    case clspv::Builtins::kFrexp:
+  //    case clspv::Builtins::kLgammaR:
+  //    case clspv::Builtins::kModf:
+  //    case clspv::Builtins::kRemquo:
+  //    case clspv::Builtins::kSincos:
+  //      F.setLinkage(llvm::GlobalValue::ExternalLinkage);
+  //      break;
+  //    default:
+  //      break;
+  //  }
+  //}
+
+  llvm::Linker L(*module);
+  L.linkInModule(std::move(libclc), 0);
+
+  return true;
+}
+
 } // namespace
 
 namespace clspv {
@@ -935,16 +973,8 @@ int Compile(const int argc, const char *const argv[]) {
     return GenerateIRFile(&pm, *module, IROutputFile);
   }
 
-  if (!LibCLC.empty()) {
-    llvm::SMDiagnostic Err;
-    std::unique_ptr<llvm::Module> libclc = llvm::parseIRFile(LibCLC, Err, context);
-    if (!libclc) {
-      llvm::errs() << "Failed to parse libclc\n";
-      return -1;
-    }
-
-    llvm::Linker L(*module);
-    L.linkInModule(std::move(libclc), 0);
+  if (!LibCLC.empty() && !LinkLibCLC(module.get())) {
+    return -1;
   }
 
   // Otherwise, populate the pass manager and run the regular passes.
@@ -1044,16 +1074,8 @@ int CompileFromSourceString(const std::string &program,
 
   std::unique_ptr<llvm::Module> module(action.takeModule());
 
-  if (!LibCLC.empty()) {
-    llvm::SMDiagnostic Err;
-    std::unique_ptr<llvm::Module> libclc = llvm::parseIRFile(LibCLC, Err, context);
-    if (!libclc) {
-      llvm::errs() << "Failed to parse libclc\n";
-      return -1;
-    }
-
-    llvm::Linker L(*module);
-    L.linkInModule(std::move(libclc), 0);
+  if (!LibCLC.empty() && !LinkLibCLC(module.get())) {
+    return -1;
   }
 
   // Optimize.

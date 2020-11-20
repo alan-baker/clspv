@@ -46,6 +46,7 @@ struct ReplaceLLVMIntrinsicsPass final : public ModulePass {
   bool replaceFshl(Function &F);
   bool replaceCountZeroes(Function &F, bool leading);
   bool replaceCopysign(Function &F);
+  bool replaceRint(Function &F);
 
   bool replaceCallsWithValue(Function &F,
                              std::function<Value *(CallInst *)> Replacer);
@@ -108,7 +109,7 @@ bool ReplaceLLVMIntrinsicsPass::replaceCallsWithValue(
   for (auto &U : F.uses()) {
     if (auto Call = dyn_cast<CallInst>(U.getUser())) {
       auto replacement = Replacer(Call);
-      if (replacement != nullptr) {
+      if (replacement != nullptr && replacement != Call) {
         Call->replaceAllUsesWith(replacement);
         ToRemove.push_back(Call);
       }
