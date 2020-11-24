@@ -5050,6 +5050,18 @@ SPIRVProducerPass::getExtInstEnum(const Builtins::FunctionInfo &func_info) {
   if (func_info.getName().find("llvm.rint.") == 0) {
     return glsl::ExtInst::ExtInstRoundEven;
   }
+  if (func_info.getName().find("llvm.fabs.") == 0) {
+    return glsl::ExtInst::ExtInstFAbs;
+  }
+  if (func_info.getName().find("llvm.floor.") == 0) {
+    return glsl::ExtInst::ExtInstFloor;
+  }
+  if (func_info.getName().find("llvm.sin.") == 0) {
+    return glsl::ExtInst::ExtInstSin;
+  }
+  if (func_info.getName().find("llvm.cos.") == 0) {
+    return glsl::ExtInst::ExtInstCos;
+  }
   return kGlslExtInstBad;
 }
 
